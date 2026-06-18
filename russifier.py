@@ -109,12 +109,27 @@ class Russifier:
             f"Исправленный вариант: " # <--- Модель ДОЛЖНА строго продолжить отсюда
         )
         # Используем create_completion вместо create_chat_completion
-        res_fix = self.llm.create_completion(
-            prompt=prompt_fix,
-            temperature=0.2,
-            stop=["\n", "Исходное:"] # Останавливаем модель, чтобы она не пошла писать лишнее
-        )            
-        return res_fix["choices"][0]["text"].strip()
+        res_fix = self.llm.create_chat_completion(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты профессиональный русский редактор. "
+                        "Отвечай только на русском языке. "
+                        "Никогда не используй китайский, английский или другие языки."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": prompt_fix
+                }
+            ],
+            temperature=0.1,
+            max_tokens=128
+        )
+
+        return res_fix["choices"][0]["message"]["content"].strip()
+
 
 
     def find_suspicious_words(self, sentence_words_map):
@@ -205,26 +220,26 @@ class Russifier:
             words_in_sentence = re.findall(r'\b[а-яА-Яa-zA-Z0-9-]+\b', sentence)
             words_in_text.append(words_in_sentence)
         
-        return words_in_text
+        return sentences, words_in_text
 
-    def llm_rewrite(self, words_in_text, rus_to_eng_map):
+    def llm_rewrite(self, sentences, words, rus_to_eng_map):
         """
             Rewrite sentences with help of AI
         """
         sentences_updated = []
         rewrite_count = 0
         
-        for words_in_sentence in words_in_text:
+        for sentence, words_in_sentence in zip(sentences,words):
             if not words_in_sentence:
                 continue
-            print(words_in_sentence)    
+            print(words_in_sentence)
+            print(sentence)    
             instructions = self.rewrite_instructions(words_in_sentence, rus_to_eng_map)
             print(instructions)
 
             # Если есть инструкции используем мощь ИИ
             if instructions:
-                sentence_original = " ".join(words_in_sentence)
-                sentence_updated = self._rewrite_sentence(sentence_original, instructions)
+                sentence_updated = self._rewrite_sentence(sentence, instructions)
                 rewrite_count += 1
                 print(sentence_updated)
                 sentences_updated.append(sentence_updated)
@@ -240,10 +255,10 @@ class Russifier:
         global_start = time.time()
         
         # Шаг 1: Разбиваем текст на предложения. Храним списки слов для каждого предложения, чтобы не искать заново
-        words_in_text = self.split_text_into_sentences_words(large_text) 
+        sentences, words = self.split_text_into_sentences_words(large_text) 
         
         # Шаг 2: Python собирает ВСЕ уникальные подозрительные слова со всего текста
-        suspicious_words = self.find_suspicious_words(words_in_text)
+        suspicious_words = self.find_suspicious_words(words)
 
         print(f"Найдено {len(suspicious_words)} уникальных подозрительных слов во всем тексте.")
         print(suspicious_words)
@@ -262,7 +277,7 @@ class Russifier:
         print(f"Получена карта английских корней от ИИ: {rus_to_eng_map}")
         
 # --- ШАГ 4: Анализ по двум словарям и подборка слов через модель ---
-        sentences_updated, rewrite_count = self.llm_rewrite(words_in_text, rus_to_eng_map)
+        sentences_updated, rewrite_count = self.llm_rewrite(sentences, words, rus_to_eng_map)
 
         global_end = time.time()
 
