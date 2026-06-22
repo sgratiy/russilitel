@@ -65,32 +65,25 @@ class MorphologyEngine:
     # INFLECTION
     # -----------------------------
 
-    def inflect_safe(self, word, target_tag):
-        """
-        Try to inflect word into grammatical form
-        described by target_tag.
+    def inflect_safe(self, word, source_tag):
 
-        Returns:
-            inflected word or None
-        """
+        CASES = {
+            'nomn', 'gent', 'datv',
+            'accs', 'ablt', 'loct'
+        }
+
+        NUMBERS = {
+            'sing', 'plur'
+        }
+
+        target_grams = source_tag.grammemes & (CASES | NUMBERS)
 
         parses = self.parse(word)
 
-        if not parses:
-            return None
-
-        best_result = None
-        best_score = -1
-
         for p in parses:
-            try:
-                inflected = p.inflect(target_tag.grammemes)
+            inflected = p.inflect(target_grams)
 
-                if inflected and p.score > best_score:
-                    best_result = inflected.word
-                    best_score = p.score
+            if inflected:
+                return inflected.word
 
-            except Exception:
-                pass
-
-        return best_result
+        return None

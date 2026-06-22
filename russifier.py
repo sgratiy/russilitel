@@ -1,4 +1,3 @@
-import os
 import re
 import time
 from huggingface_hub import InferenceClient
@@ -24,7 +23,6 @@ class Russifier:
     def __init__(self, hf_token, model_name="Qwen/Qwen2.5-7B-Instruct"):
         self.client = InferenceClient(token=hf_token)
         self.model_name = model_name
-#        self.morph = pymorphy3.MorphAnalyzer()
         self.morph_engine = MorphologyEngine()
         self.load_dictionaries()
 
@@ -39,12 +37,11 @@ class Russifier:
 
     # ---------------- CORE LLM CALL ----------------
 
-    def _rewrite_sentence(self, sentence, instructions):
+    def edit_sentence(self, sentence, instructions):
 
         prompt = (
             f"Исходное предложение:\n{sentence}\n\n"
             f"Инструкции:\n{chr(10).join(instructions)}\n\n"
-            "Перепиши предложение на естественном, грамотном русском языке.\n"
             "Выведи только итоговый вариант."
         )
 
@@ -74,8 +71,8 @@ class Russifier:
 
     # ---------------- DETECTION ----------------
 
-    def find_suspicious_words(self, words_by_sentence):
-        suspicious = set()
+    def find_loan_words(self, words_by_sentence):
+        loan_words = set()
 
         for words in words_by_sentence:
             for w in words:
@@ -86,28 +83,27 @@ class Russifier:
                 parsed = self.morph_engine.best_parse(wl)
 
                 if re.search(r"[a-zA-Z]", wl):
-                    suspicious.add(wl)
+                    loan_words.add(wl)
                 elif not parsed.is_known:
-                    suspicious.add(wl)
+                    loan_words.add(wl)
                 elif parsed.normal_form in self.RUS_PURISM_DICT:
-                    suspicious.add(wl)
+                    loan_words.add(wl)
 
-        return suspicious
+        return loan_words
 
 
-    def _batch_decrypt_roots(self, suspicious_words):
+    def _batch_decrypt_roots(self, rus_loan_words):
         """
         [ВНУТРЕННИЙ МЕТОД] Пактная дешифровка: ИИ переводит весь список слов в корни за ОДИН вызов.
         """
-        if not suspicious_words:
+        if not rus_loan_words:
             return {}
 
-        suspects_str = ", ".join(suspicious_words)
+        rus_loan_words_str = ", ".join(rus_loan_words)
 
         prompt = (
-            f"Ты — лингвистический сканер ИТ-сленга. Перед тобой список подозрительных слов, вырезанных из текста.\n"
-            f"Переведи КАЖДОЕ слово в его исходную начальную форму на АНГЛИЙСКОМ языке (лемму).\n"
-            f"Выводи строго в формате: 'исходное слово на русском языке -> английская лемма'. \n"
+            "Тебе даётся список слов сленгов, или слов заимстованных из английского языка."
+            f"Твоя задача перевестп КАЖДОЕ слово c русского языка в его исходную начальную форму на АНГЛИЙСКОМ языке (лемму).\n"
             f"Верни ровно одно английское слово для каждого входного слова. \n"
             f"Каждое слово с новой строки. Не используй JSON, не пиши пояснений.\n\n"
             f"Примеры:\n"
@@ -115,7 +111,7 @@ class Russifier:
             f"таска -> task\n"
             f"интернете -> internet\n"
             f"коммитить -> commit\n\n"
-            f"Целевой список слов: {suspects_str}\n"
+            f"Целевой список слов: {rus_loan_words_str}\n"
             f"Ответ:"
         )
 
@@ -126,37 +122,29 @@ class Russifier:
             max_tokens=200
         )
 
-        ai_output = res.choices[0].message.content.strip()
+        eng_lemmas_txt = res.choices[0].message.content.strip()
         rus_to_eng_map = {}
+        eng_lemmas = eng_lemmas_txt.split("\n")
 
-        for line in ai_output.split("\n"):
-            if "->" not in line:
-                continue
-
-            parts = line.split("->")
-            if len(parts) == 2:
-                original = parts[0].strip()
-                eng_lemma = parts[1].strip().lower()
-                rus_to_eng_map[original] = eng_lemma
+        for rus_loan_word, eng_lemma in zip(rus_loan_words,eng_lemmas):
+                rus_to_eng_map[rus_loan_word] = eng_lemma
 
         return rus_to_eng_map
 
 
     # ---------------- INSTRUCTIONS ----------------
 
-    def _fmt_exact(self, word, options):
+    def _fmt_given_options(self, word, options):
         return (
             f"слово '{word}' заменить на один из вариантов: '{options}'. "
-            f"Обязательно сохранить падеж, число и грамматическую форму исходного слова."
         )
-    def _fmt_fallback(self, word, eng_lemma):
+    def _fmt_llm_decides(self, word, eng_lemma):
         return  (
             f"слово '{word}' — это новый англицизм (корень: {eng_lemma}). Обязательно замени его на красивый русский литературный аналог на свое усмотрение."
-            f"Обязательно сохранить падеж, число и грамматическую форму исходного слова."
         )
 
 
-    def rewrite_instructions(self, words_in_sentence, rus_to_eng_map):
+    def _edit_instructions(self, words_in_sentence, rus_to_eng_map):
         """
         Инструкции для ИИ по преобразованию предложений
         """
@@ -172,7 +160,7 @@ class Russifier:
 
             if rus_lemma in self.RUS_PURISM_DICT:
                 instructions.append(
-                    self._fmt_exact(word, self.RUS_PURISM_DICT[rus_lemma])
+                    self._fmt_given_options(word, self.RUS_PURISM_DICT[rus_lemma])
                 )
                 continue
 
@@ -184,11 +172,11 @@ class Russifier:
 
                 if eng_lemma in self.ENG_PURISM_DICT:
                     instructions.append(
-                        self._fmt_exact(word, self.ENG_PURISM_DICT[eng_lemma])
+                        self._fmt_given_options(word, self.ENG_PURISM_DICT[eng_lemma])
                     )
                 else:
                     instructions.append(
-                        self._fmt_fallback(word, eng_lemma)
+                        self._fmt_llm_decides(word, eng_lemma)
                     )
 
         return instructions
@@ -198,20 +186,30 @@ class Russifier:
     def llm_rewrite(self, sentences, words_by_sentence, rus_to_eng_map):
         results = []
 
+        GRAMMA_FIX_INSTRUCTIONS = [
+            "Проверь грамматику и исправь окончания где необходимо"
+        ]
+
+
         for sentence, words in zip(sentences, words_by_sentence):
 
-            instructions = self.rewrite_instructions(words, rus_to_eng_map)
+            instructions = self._edit_instructions(words, rus_to_eng_map)
             print(sentence)
             print(f"Instructions: {instructions}")
+
             if instructions:
-                rewritten = self._rewrite_sentence(sentence, instructions)
-                results.append(rewritten)
-                print(f"Changed to: {rewritten}")
+                sentence_edited = self.edit_sentence(sentence, instructions)
+                print(f"After lexical edit: {sentence_edited}")
+                sentence_edited = self.edit_sentence(sentence_edited, GRAMMA_FIX_INSTRUCTIONS)
+                print(f"After gramma edit: {sentence_edited}")
+                results.append(sentence_edited)
             else:
                 results.append(sentence)
-                print("Did not chnage")
+                print("No chanage!")
 
         return results, len(results)
+
+
 
     # ---------------- MAIN ENTRY ----------------
 
@@ -221,11 +219,11 @@ class Russifier:
 
         sentences, words = self.split_text_into_sentences_words(text)
 
-        suspicious = self.find_suspicious_words(words)
+        loan_words = self.find_loan_words(words)
 
-        print("Suspicious words:", suspicious)
+        print("Loan words:", loan_words)
 
-        rus_to_eng_map = self._batch_decrypt_roots(list(suspicious))
+        rus_to_eng_map = self._batch_decrypt_roots(list(loan_words))
 
         print(f"rus_to_eng_map: {rus_to_eng_map}")
 

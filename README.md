@@ -1,201 +1,130 @@
-# 🇷🇺 Russian Word Checker (Проверка русских слов)
+# Russilitel
 
-A web application that identifies and underlines words that do not belong to the Russian language. The application uses a Python Flask backend with a SQLite database to store Russian words.
+English loanword replacement tool for Russian text using LLM model for context-aware replacements.
+
+## Overview
+
+Russilitel is a Python tool that automatically replaces English loanwords in Russian text with appropriate Russian equivalents. It uses Qwen/Qwen2.5-7B-Instruct model to analyze the context and choose the most suitable replacement from a predefined list of options.
 
 ## Features
 
-- ✅ Identifies non-Russian words in text
-- 📊 Provides statistics on Russian vs non-Russian words
-- 🎨 Beautiful, responsive UI with gradient design
-- 💾 SQLite database for Russian word dictionary
-- 🌐 RESTful API backend
-- 🔍 Real-time text analysis
-
-## Tech Stack
-
-**Frontend:**
-- HTML5
-- CSS3 (with modern gradients and animations)
-- Vanilla JavaScript (ES6+)
-
-**Backend:**
-- Python 3.x
-- Flask (Web framework)
-- Flask-CORS (Cross-origin resource sharing)
-- SQLite3 (Database)
+- **Context-aware replacement**: Uses LLM to understand the context and choose the best replacement
+- **Multiple replacement options**: Each loanword has several Russian alternatives
+- **Command-line interface**: Easy to use from terminal or scripts
+- **File processing**: Can process entire files
+- **Interactive mode**: Real-time text processing
+- **Customizable**: Supports different models
 
 ## Installation
 
-### Prerequisites
-
-- Python 3.7 or higher
-- pip (Python package manager)
-
-### Setup Instructions
-
-1. **Clone or navigate to the project directory:**
-```bash
-cd c:\Users\sergey\repos\russilitel
-```
-
-2. **Install Python dependencies:**
+1. Install the required dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. **Start the backend server:**
-```bash
-python app.py
-```
-
-The server will start on `http://localhost:5000` and automatically create the SQLite database with Russian words.
-
-4. **Open the frontend:**
-   - Open `index.html` in your web browser
-   - Or use a local server (recommended):
-   ```bash
-   python -m http.server 8000
-   ```
-   Then visit `http://localhost:8000`
+2. The tool will automatically download the Russian BERT model on first run.
 
 ## Usage
 
-1. **Enter text** in the input textarea
-2. **Click "Проверить текст (Check Text)"** button or press `Ctrl+Enter`
-3. **View results** with non-Russian words underlined in red
-4. **Check statistics** showing total words, Russian words, and non-Russian words
+### Basic Usage
 
-### Keyboard Shortcuts
-
-- `Ctrl+Enter` / `Cmd+Enter`: Check text
-- `Shift+Enter`: Load sample text for testing
-
-## API Endpoints
-
-The Flask backend provides the following API endpoints:
-
-### Check Text
-```
-POST /api/check-text
-Content-Type: application/json
-
-{
-  "text": "Это текст с English словами"
-}
+Replace text directly from command line:
+```bash
+python russilitel.py "У нас дедлайн завтра по проекту"
 ```
 
-**Response:**
-```json
-{
-  "results": [
-    {"word": "Это", "is_russian": true},
-    {"word": "текст", "is_russian": true},
-    {"word": "с", "is_russian": true},
-    {"word": "English", "is_russian": false},
-    {"word": "словами", "is_russian": true}
-  ],
-  "statistics": {
-    "total_words": 5,
-    "russian_words": 4,
-    "non_russian_words": 1
-  },
-  "text": "Это текст с English словами"
-}
+### Interactive Mode
+
+Start interactive mode for real-time processing:
+```bash
+python russilitel.py --interactive
 ```
 
-### Add Word to Dictionary
-```
-POST /api/add-word
-Content-Type: application/json
+### File Processing
 
-{
-  "word": "новоеслово"
-}
+Process a file and save the result:
+```bash
+python russilitel.py -f input.txt -o output.txt
 ```
 
-### Get Dictionary Count
-```
-GET /api/dictionary-count
-```
+### Custom Model
 
-### Health Check
-```
-GET /api/health
+Use a different BERT model:
+```bash
+python russilitel.py --model "your-model-name" "text"
 ```
 
-## Database Structure
+### From Standard Input
 
-The SQLite database (`russian_words.db`) contains a single table:
-
-```sql
-CREATE TABLE russian_words (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    word TEXT UNIQUE NOT NULL,
-    lowercase_word TEXT NOT NULL
-);
+Process text from stdin:
+```bash
+echo "У нас дедлайн завтра" | python russilitel.py
 ```
 
-The database is automatically populated with common Russian words on first run, including:
-- Pronouns (я, ты, он, она, etc.)
-- Common verbs (быть, делать, говорить, etc.)
-- Common nouns (человек, дом, работа, etc.)
-- Adjectives (большой, хороший, новый, etc.)
-- Adverbs, prepositions, conjunctions, and particles
-- Numbers and common phrases
+## Loanword Dictionary
 
-## Project Structure
+The tool currently supports these loanwords with their Russian alternatives:
+
+- **дедлайн**: ["крайний срок", "срок сдачи", "предельный срок"]
+- **фидбек**: ["отзыв", "обратная связь", "отклик"]  
+- **кейс**: ["случай", "пример", "дело", "портфель"]
+
+## How It Works
+
+1. Detect loan words in russian text
+2. Create map of loan words → English lemma (using LLM)
+3. Map English lemma → proper authentic Russian word candidates (using purism dictionaries)
+4. Lexical edit: choose most appropriate russian word based on context
+5. Grammar edit: correct minor word ending inconsistencies (using LLM)
+
+
+## Examples
+
+### Input:
+```
+Давай ты пошеришь экран, а я зааппрувлю доки после митинга.
+Пожалуйста, дайте мне фидбек по презентации.
 
 ```
-russilitel/
-├── app.py                  # Flask backend server
-├── index.html              # Main HTML page
-├── style.css               # Styling
-├── script.js               # Frontend JavaScript
-├── requirements.txt        # Python dependencies
-├── README.md              # This file
-└── russian_words.db       # SQLite database (created on first run)
+
+### Output:
+```
+Давай ты поделишься экраном, а я проверю доки после собрания.
+Пожалуйста, дайте мне обратную связь по презентации.
 ```
 
-## Development
+## Testing
 
-### Adding More Words
+Run the test suite to see the tool in action:
+```bash
+python test_russilitel.py
+```
 
-You can add words to the database in two ways:
+## Requirements
 
-1. **Via API:**
-   ```bash
-   curl -X POST http://localhost:5000/api/add-word \
-     -H "Content-Type: application/json" \
-     -d '{"word": "новоеслово"}'
-   ```
+- Python 3.7+
+- torch
+- transformers
+- numpy
 
-2. **Directly in code:**
-   Edit the `russian_words` list in `app.py` and delete `russian_words.db` to regenerate.
+## Performance Notes
 
-### Customization
+- The first run will be slower as the BERT model needs to be downloaded
+- Subsequent runs will be faster as the model is cached locally
+- The tool works best with sentences containing clear context around the loanwords
 
-- **Change port:** Modify the `port` parameter in `app.py`
-- **Update UI colors:** Edit CSS variables in `style.css`
-- **Modify word matching:** Update the regex patterns in `app.py`
+## Contributing
 
-## Troubleshooting
+To add new loanwords, modify the `_build_loanword_map()` method in `russilitel.py`:
 
-**Issue: "Server not running" error**
-- Make sure the Python backend is running: `python app.py`
-- Check that port 5000 is not being used by another application
-
-**Issue: CORS errors**
-- Ensure Flask-CORS is installed: `pip install flask-cors`
-- Check that the API_URL in `script.js` matches your backend URL
-
-**Issue: Words not being detected correctly**
-- The dictionary contains common Russian words. Add missing words via the API
-- Case is ignored during comparison (все слова нормализованы)
+```python
+def _build_loanword_map(self) -> Dict[str, List[str]]:
+    return {
+        "new_loanword": ["russian_option1", "russian_option2", "russian_option3"],
+        # ... existing entries
+    }
+```
 
 ## License
 
-This project is open source and available for educational purposes.
-
-## Author
-
-Built for Russian language text analysis and validation.
+This project is open source and available under the MIT License.
