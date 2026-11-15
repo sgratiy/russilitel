@@ -1,7 +1,9 @@
+import os
 import re
 import time
-from huggingface_hub import InferenceClient
+from openai import OpenAI
 from morphology_engine import MorphologyEngine
+
 
 class Russifier:
 
@@ -17,12 +19,32 @@ class Russifier:
         "менеджер": "руководитель, управляющий",
         "интернет": "межсеть, паутина",
         "дедлайн": "крайний срок, срок сдачи",
-        "митинг": "собрание, сборище"
+        "митинг": "собрание, сборище",
+        "зашарить": "показать, поделиться, открыть доступ",
+        "шарить": "делиться, разбираться",
+        "фикс": "исправление, правка",
+        "фиксить": "исправлять, чинить",
     }
 
-    def __init__(self, hf_token, model_name="Qwen/Qwen2.5-7B-Instruct"):
-        self.client = InferenceClient(token=hf_token)
+    def __init__(self,
+                openrouter_api_key=None,
+                model_name="meta-llama/llama-3.3-70b-instruct:free",
+                request_delay=3.1                 
+                ):
+        api_key = openrouter_api_key or os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "OpenRouter API key is required. Pass 'openrouter_api_key' "
+                "or set the OPENROUTER_API_KEY environment variable."
+            )
+
+        print(f"OpenRouter model: {model_name}")
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key,
+        )
         self.model_name = model_name
+        self.request_delay = request_delay
         self.morph_engine = MorphologyEngine()
         self.load_dictionaries()
 
@@ -37,6 +59,31 @@ class Russifier:
 
     # ---------------- CORE LLM CALL ----------------
 
+    def _call_llm(self, messages, temperature=0.3, max_tokens=2000):
+            if self.request_delay > 0:
+                time.sleep(self.request_delay)
+
+            res = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            if not res.choices:
+                raise RuntimeError(f"OpenRouter returned no choices: {res}")
+
+            message = res.choices[0].message
+            content = message.content
+
+            if content is None:
+                raise RuntimeError(
+                    f"Model '{res.model}' returned empty content "
+                    f"(finish_reason={res.choices[0].finish_reason})."
+                )
+
+            return content.strip()
+
     def edit_sentence(self, sentence, instructions):
 
         prompt = (
@@ -45,17 +92,14 @@ class Russifier:
             "Выведи только итоговый вариант."
         )
 
-        res = self.client.chat_completion(
-            model=self.model_name,
+        return self._call_llm(
             messages=[
                 {"role": "system", "content": "Ты профессиональный редактор русского языка."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
-            max_tokens=300
+            max_tokens=1500
         )
-
-        return res.choices[0].message.content.strip()
 
     # ---------------- TEXT SPLIT ----------------
 
@@ -91,10 +135,9 @@ class Russifier:
 
         return loan_words
 
-
     def _batch_decrypt_roots(self, rus_loan_words):
         """
-        [ВНУТРЕННИЙ МЕТОД] Пактная дешифровка: ИИ переводит весь список слов в корни за ОДИН вызов.
+        [ВНУТРЕННИЙ МЕТОД] Пакетная дешифровка: ИИ переводит весь список слов в корни за ОДИН вызов.
         """
         if not rus_loan_words:
             return {}
@@ -102,8 +145,8 @@ class Russifier:
         rus_loan_words_str = ", ".join(rus_loan_words)
 
         prompt = (
-            "Тебе даётся список слов сленгов, или слов заимстованных из английского языка."
-            f"Твоя задача перевестп КАЖДОЕ слово c русского языка в его исходную начальную форму на АНГЛИЙСКОМ языке (лемму).\n"
+            "Тебе даётся список слов сленгов, или слов заимствованных из английского языка."
+            f"Твоя задача перевести КАЖДОЕ слово c русского языка в его исходную начальную форму на АНГЛИЙСКОМ языке (лемму).\n"
             f"Верни ровно одно английское слово для каждого входного слова. \n"
             f"Каждое слово с новой строки. Не используй JSON, не пиши пояснений.\n\n"
             f"Примеры:\n"
@@ -115,22 +158,19 @@ class Russifier:
             f"Ответ:"
         )
 
-        res = self.client.chat_completion(
-            model=self.model_name,
+        eng_lemmas_txt = self._call_llm(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.01,
-            max_tokens=200
+            max_tokens=1500
         )
 
-        eng_lemmas_txt = res.choices[0].message.content.strip()
         rus_to_eng_map = {}
-        eng_lemmas = eng_lemmas_txt.split("\n")
+        eng_lemmas = [line.strip().lower() for line in eng_lemmas_txt.split("\n") if line.strip()]
 
-        for rus_loan_word, eng_lemma in zip(rus_loan_words,eng_lemmas):
-                rus_to_eng_map[rus_loan_word] = eng_lemma
+        for rus_loan_word, eng_lemma in zip(rus_loan_words, eng_lemmas):
+            rus_to_eng_map[rus_loan_word] = eng_lemma
 
         return rus_to_eng_map
-
 
     # ---------------- INSTRUCTIONS ----------------
 
@@ -138,11 +178,11 @@ class Russifier:
         return (
             f"слово '{word}' заменить на один из вариантов: '{options}'. "
         )
+
     def _fmt_llm_decides(self, word, eng_lemma):
-        return  (
+        return (
             f"слово '{word}' — это новый англицизм (корень: {eng_lemma}). Обязательно замени его на красивый русский литературный аналог на свое усмотрение."
         )
-
 
     def _edit_instructions(self, words_in_sentence, rus_to_eng_map):
         """
@@ -167,8 +207,9 @@ class Russifier:
             # -----------------------------
             # 2. Английский контур (из LLM)
             # -----------------------------
-            if word in rus_to_eng_map:
-                eng_lemma = rus_to_eng_map[word]
+            word_lower = word.lower()
+            if word_lower in rus_to_eng_map:
+                eng_lemma = rus_to_eng_map[word_lower]
 
                 if eng_lemma in self.ENG_PURISM_DICT:
                     instructions.append(
@@ -190,7 +231,6 @@ class Russifier:
             "Проверь грамматику и исправь окончания где необходимо"
         ]
 
-
         for sentence, words in zip(sentences, words_by_sentence):
 
             instructions = self._edit_instructions(words, rus_to_eng_map)
@@ -205,11 +245,9 @@ class Russifier:
                 results.append(sentence_edited)
             else:
                 results.append(sentence)
-                print("No chanage!")
+                print("No change!")
 
         return results, len(results)
-
-
 
     # ---------------- MAIN ENTRY ----------------
 
