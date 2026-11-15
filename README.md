@@ -1,130 +1,130 @@
-# Russilitel
+# Russilitel (РусСилитель)
 
-English loanword replacement tool for Russian text using LLM model for context-aware replacements.
+Инструмент на Python для автоматического поиска и замены англицизмов и сетевого жаргона в русском тексте на литературные русские соответствия. Работает на основе морфологического разбора (`pymorphy3`) и больших языковых моделей через программный интерфейс **OpenRouter**.
 
-## Overview
+## Обзор
 
-Russilitel is a Python tool that automatically replaces English loanwords in Russian text with appropriate Russian equivalents. It uses Qwen/Qwen2.5-7B-Instruct model to analyze the context and choose the most suitable replacement from a predefined list of options.
+**Russilitel** объединяет строгий морфологический разбор и словари речевой чистоты с возможностями современных языковых моделей (таких как `google/gemma-3-27b-it:free`, `meta-llama/llama-3.3-70b-instruct:free` или общий распределитель `openrouter/free`). Такой двухуровневый подход позволяет точно управлять заменой отдельных понятий по заданным словарям, сохраняя при этом правильное согласование окончаний и естественный слог.
 
-## Features
+## Основные возможности
 
-- **Context-aware replacement**: Uses LLM to understand the context and choose the best replacement
-- **Multiple replacement options**: Each loanword has several Russian alternatives
-- **Command-line interface**: Easy to use from terminal or scripts
-- **File processing**: Can process entire files
-- **Interactive mode**: Real-time text processing
-- **Customizable**: Supports different models
+* **Совмещённый разбор текста**: поиск заимствований с помощью морфологического разборщика `pymorphy3` (проверка латиницы, неизвестных слов и словарных начальных форм).
+* **Двухуровневые словари замен**: поддержка как русских начальных форм (`RUS_PURISM_DICT`), так и восстановленных английских корней (`ENG_PURISM_DICT`).
+* **Смысловая подстановка и правописание**: языковая модель подбирает наиболее уместный синоним из предложенных вариантов (или находит свой для новых заимствований) и согласует окончания слов.
+* **Работа без мощной видеокарты**: обработка выполняется на удалённых серверах через открытый программный интерфейс **OpenRouter** с поддержкой бесплатных моделей (`:free`).
+* **Защита от ограничений на частоту обращений**: встроенная настраиваемая задержка (`request_delay`) для соблюдения правил бесплатного доступа OpenRouter (не более 20 обращений в минуту).
 
-## Installation
+## Установка
 
-1. Install the required dependencies:
+1. Скопируйте хранилище с исходным кодом и перейдите в папку проекта:
+
+```bash
+git clone <адрес-вашего-хранилища>
+cd russilitel
+```
+
+2. Установите необходимые библиотеки из файла зависимостей `requirements.txt`:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-2. The tool will automatically download the Russian BERT model on first run.
+3. Получите бесплатный ключ доступа на сайте [openrouter.ai/keys](https://openrouter.ai/keys) и при необходимости сохраните его в переменную окружения:
 
-## Usage
+* **Linux / macOS:**
 
-### Basic Usage
-
-Replace text directly from command line:
 ```bash
-python russilitel.py "У нас дедлайн завтра по проекту"
+export OPENROUTER_API_KEY="sk-or-v1-ваш-ключ"
 ```
 
-### Interactive Mode
+* **Windows (PowerShell):**
 
-Start interactive mode for real-time processing:
-```bash
-python russilitel.py --interactive
+```powershell
+$env:OPENROUTER_API_KEY="sk-or-v1-ваш-ключ"
 ```
 
-### File Processing
+## Использование
 
-Process a file and save the result:
-```bash
-python russilitel.py -f input.txt -o output.txt
-```
+### Базовый запуск в Python
 
-### Custom Model
-
-Use a different BERT model:
-```bash
-python russilitel.py --model "your-model-name" "text"
-```
-
-### From Standard Input
-
-Process text from stdin:
-```bash
-echo "У нас дедлайн завтра" | python russilitel.py
-```
-
-## Loanword Dictionary
-
-The tool currently supports these loanwords with their Russian alternatives:
-
-- **дедлайн**: ["крайний срок", "срок сдачи", "предельный срок"]
-- **фидбек**: ["отзыв", "обратная связь", "отклик"]  
-- **кейс**: ["случай", "пример", "дело", "портфель"]
-
-## How It Works
-
-1. Detect loan words in russian text
-2. Create map of loan words → English lemma (using LLM)
-3. Map English lemma → proper authentic Russian word candidates (using purism dictionaries)
-4. Lexical edit: choose most appropriate russian word based on context
-5. Grammar edit: correct minor word ending inconsistencies (using LLM)
-
-
-## Examples
-
-### Input:
-```
-Давай ты пошеришь экран, а я зааппрувлю доки после митинга.
-Пожалуйста, дайте мне фидбек по презентации.
-
-```
-
-### Output:
-```
-Давай ты поделишься экраном, а я проверю доки после собрания.
-Пожалуйста, дайте мне обратную связь по презентации.
-```
-
-## Testing
-
-Run the test suite to see the tool in action:
-```bash
-python test_russilitel.py
-```
-
-## Requirements
-
-- Python 3.7+
-- torch
-- transformers
-- numpy
-
-## Performance Notes
-
-- The first run will be slower as the BERT model needs to be downloaded
-- Subsequent runs will be faster as the model is cached locally
-- The tool works best with sentences containing clear context around the loanwords
-
-## Contributing
-
-To add new loanwords, modify the `_build_loanword_map()` method in `russilitel.py`:
+Вы можете передать ключ OpenRouter напрямую при создании объекта `Russifier` или использовать переменную окружения `OPENROUTER_API_KEY`:
 
 ```python
-def _build_loanword_map(self) -> Dict[str, List[str]]:
-    return {
-        "new_loanword": ["russian_option1", "russian_option2", "russian_option3"],
-        # ... existing entries
-    }
+from russifier import Russifier
+
+russifier = Russifier(
+    openrouter_api_key="sk-or-v1-ваш-ключ",
+    model_name="google/gemma-3-27b-it:free",
+    request_delay=3.1  # рекомендуется для бесплатного доступа OpenRouter
+)
+
+text = "Наш менеджер задеплоил новый фикс, чтобы зашарить доки перед митингом."
+result = russifier.process_text(text)
+
+print("Результат:")
+print(result)
 ```
 
-## License
+### Выбор языковой модели
 
-This project is open source and available under the MIT License.
+По умолчанию используется общий распределитель `openrouter/free`, который сам подбирает свободную бесплатную модель. Вы также можете явно указать любую другую бесплатную модель с пометкой `:free` из перечня OpenRouter:
+
+```python
+russifier = Russifier(
+    openrouter_api_key="sk-or-v1-ваш-ключ",
+    model_name="meta-llama/llama-3.3-70b-instruct:free"
+)
+```
+
+### Настройка собственных словарей
+
+Вы можете загрузить свои списки замен с помощью метода `load_dictionaries()`:
+
+```python
+custom_eng = {
+    "deploy": "выкатить, развернуть, опубликовать",
+    "fix": "исправление, правка",
+    "share": "показать, поделиться"
+}
+
+custom_rus = {
+    "менеджер": "руководитель, управляющий",
+    "дедлайн": "крайний срок, срок сдачи",
+    "митинг": "собрание, совещание"
+}
+
+russifier.load_dictionaries(
+    eng_purism_dict=custom_eng,
+    rus_purism_dict=custom_rus
+)
+```
+
+## Как устроена работа
+
+1. **Деление текста**: исходный отрывок разбивается на предложения и отдельные слова.
+2. **Поиск заимствований (`find_loan_words`)**: каждое слово проверяется через `MorphologyEngine` (`pymorphy3`). В список для замены попадают слова с латинскими буквами, слова, отсутствующие в словаре, а также слова из `RUS_PURISM_DICT`.
+3. **Пакетное определение корней (`_batch_decrypt_roots`)**: за одно обращение к языковой модели заимствованные слова приводятся к их исходной английской начальной форме (например, `задеплоили` → `deploy`).
+4. **Составление правил (`_edit_instructions`)**: для каждого найденного слова задаётся правило замены из `RUS_PURISM_DICT`, `ENG_PURISM_DICT` или указание подобрать литературный аналог.
+5. **Смысловая и грамматическая правка (`llm_rewrite`)**: языковая модель заменяет англицизмы по заданным правилам и выверяет согласование падежей, родов и окончаний в итоговом предложении.
+
+## Пример работы
+
+### Исходный текст:
+
+```text
+Наш менеджер задеплоил новый фикс, чтобы зашарить доки перед митингом.
+```
+
+### Результат:
+
+```text
+Наш руководитель развернул новое исправление, чтобы поделиться документами перед совещанием.
+```
+
+## Требования
+
+* Python 3.8 или новее
+* Библиотека `openai` (для связи с серверами OpenRouter)
+* Библиотека `pymorphy3` (и файл `morphology_engine.py` в папке проекта)
+* Действующий ключ доступа OpenRouter
+

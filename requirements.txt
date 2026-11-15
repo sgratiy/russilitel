@@ -1,3 +1,2 @@
-torch
-transformers
-numpy
+openai>=1.0.0
+pymorphy3>=2.0.0
